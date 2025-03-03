@@ -15,7 +15,7 @@ COPY . .
 RUN mkdir -p uploads/documents
 
 # Expose port
-EXPOSE 5000
+EXPOSE 5001
 
 # Start command
 CMD ["npm", "start"]

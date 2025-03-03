@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
-const config = require('./config/config');
+const config = require('./config/backend-config-file.js');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');

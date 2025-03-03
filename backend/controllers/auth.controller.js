@@ -2,7 +2,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/admin.model');
-const config = require('../config/config');
+const config = require('../config/backend-config-file.js');
 
 /**
  * Register a new admin

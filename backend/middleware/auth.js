@@ -1,6 +1,6 @@
 // backend/middleware/auth.js
 const jwt = require('jsonwebtoken');
-const config = require('../config/config');
+const config = require('../config/backend-config-file.js');
 
 /**
  * Authentication middleware to verify JWT token
