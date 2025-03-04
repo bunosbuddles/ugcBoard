@@ -50,7 +50,6 @@ const DocumentUpload = () => {
   const [file, setFile] = useState(null);
   const [documentType, setDocumentType] = useState('');
   const [extractedData, setExtractedData] = useState({
-    creatorName: '',
     clientName: '',
     amount: '',
     dueDate: null,
@@ -191,7 +190,6 @@ const DocumentUpload = () => {
     setFile(null);
     setDocumentType('');
     setExtractedData({
-      creatorName: '',
       clientName: '',
       amount: '',
       dueDate: null,
@@ -300,17 +298,7 @@ const DocumentUpload = () => {
                 </Typography>
               </Grid>
               
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Creator Name"
-                  name="creatorName"
-                  value={extractedData.creatorName || ''}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12} sm={6}>
+              <Grid item xs={12}>
                 <TextField
                   fullWidth
                   label="Client Name"

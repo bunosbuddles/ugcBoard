@@ -23,7 +23,6 @@ import { styled, useTheme } from '@mui/material/styles';
 // Icons
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
-import PeopleIcon from '@mui/icons-material/People';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import DescriptionIcon from '@mui/icons-material/Description';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -55,6 +54,7 @@ const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
 
 const AppBarStyled = styled(AppBar, { shouldForwardProp: (prop) => prop !== 'open' })(
   ({ theme, open }) => ({
+    backgroundColor: theme.palette.primary.main,
     transition: theme.transitions.create(['margin', 'width'], {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.leavingScreen,
@@ -76,6 +76,8 @@ const DrawerHeader = styled('div')(({ theme }) => ({
   padding: theme.spacing(0, 1),
   ...theme.mixins.toolbar,
   justifyContent: 'center',
+  backgroundColor: theme.palette.primary.main,
+  color: theme.palette.primary.contrastText,
 }));
 
 const MainLayout = () => {
@@ -85,7 +87,7 @@ const MainLayout = () => {
   const [anchorEl, setAnchorEl] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { currentUser, logout } = useAuth();
 
   const handleDrawerToggle = () => {
     setOpen(!open);
@@ -105,16 +107,21 @@ const MainLayout = () => {
     navigate('/login');
   };
 
+  const handleProfileClick = () => {
+    handleClose();
+    navigate('/profile');
+  };
+
+  // Get first letter of user's name for avatar
+  const getInitials = () => {
+    return currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U';
+  };
+
   const menuItems = [
     {
       text: 'Dashboard',
       icon: <DashboardIcon />,
       path: '/'
-    },
-    {
-      text: 'Creators',
-      icon: <PeopleIcon />,
-      path: '/creators'
     },
     {
       text: 'Deals',
@@ -130,7 +137,7 @@ const MainLayout = () => {
       text: 'Upload Document',
       icon: <UploadFileIcon />,
       path: '/documents/upload'
-    }
+    },
   ];
 
   return (
@@ -146,8 +153,18 @@ const MainLayout = () => {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            UGC Agency Dashboard
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, fontFamily: 'serif' }}>
+            Vamp
+            <Typography 
+              variant="caption" 
+              sx={{ 
+                ml: 1, 
+                color: theme.palette.secondary.light, 
+                letterSpacing: 1
+              }}
+            >
+              LUX UGC AGENCY EST. 2023
+            </Typography>
           </Typography>
           <div>
             <IconButton
@@ -158,7 +175,9 @@ const MainLayout = () => {
               onClick={handleMenu}
               color="inherit"
             >
-              <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main' }}>A</Avatar>
+              <Avatar sx={{ width: 32, height: 32, bgcolor: theme.palette.secondary.main }}>
+                {getInitials()}
+              </Avatar>
             </IconButton>
             <Menu
               id="menu-appbar"
@@ -175,7 +194,7 @@ const MainLayout = () => {
               open={Boolean(anchorEl)}
               onClose={handleClose}
             >
-              <MenuItem onClick={handleClose}>
+              <MenuItem onClick={handleProfileClick}>
                 <ListItemIcon>
                   <AccountCircleIcon fontSize="small" />
                 </ListItemIcon>
@@ -199,6 +218,8 @@ const MainLayout = () => {
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
+            backgroundColor: theme.palette.background.default,
+            borderRight: `1px solid ${theme.palette.divider}`,
           },
         }}
         variant={isMobile ? "temporary" : "persistent"}
@@ -207,8 +228,8 @@ const MainLayout = () => {
         onClose={isMobile ? handleDrawerToggle : undefined}
       >
         <DrawerHeader>
-          <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-            UGC Agency
+          <Typography variant="h6" sx={{ fontWeight: 'bold', fontFamily: 'serif' }}>
+            Vamp
           </Typography>
         </DrawerHeader>
         <Divider />
@@ -223,10 +244,10 @@ const MainLayout = () => {
                 key={item.text}
                 onClick={() => navigate(item.path)}
                 sx={{
-                  backgroundColor: isActive ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+                  backgroundColor: isActive ? 'rgba(45, 82, 58, 0.08)' : 'transparent',
                   borderLeft: isActive ? `4px solid ${theme.palette.primary.main}` : '4px solid transparent',
                   '&:hover': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                    backgroundColor: 'rgba(45, 82, 58, 0.04)',
                   }
                 }}
               >

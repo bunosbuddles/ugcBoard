@@ -1,59 +1,65 @@
-// backend/controllers/auth.controller.js
-const bcrypt = require('bcryptjs');
+// controllers/auth.controller.js
 const jwt = require('jsonwebtoken');
-const Admin = require('../models/admin.model');
+const User = require('../models/user.model');
 const config = require('../config/backend-config-file.js');
 
 /**
- * Register a new admin
+ * Register a new user
  * @param {Object} req - Request object
  * @param {Object} res - Response object
- * @returns {Object} Response with admin token
+ * @returns {Object} Response with user token
  */
 exports.register = async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, name, phone, socialHandles } = req.body;
 
-    // Check if admin with email already exists
-    let admin = await Admin.findOne({ email });
-    if (admin) {
-      return res.status(400).json({ message: 'Admin already exists with this email' });
+    // Check if user with email already exists
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ message: 'User already exists with this email' });
     }
 
-    // Check if admin with username already exists
-    admin = await Admin.findOne({ username });
-    if (admin) {
-      return res.status(400).json({ message: 'Admin already exists with this username' });
+    // Check if user with username already exists
+    user = await User.findOne({ username });
+    if (user) {
+      return res.status(400).json({ message: 'User already exists with this username' });
     }
 
-    // Create new admin
-    admin = new Admin({
+    // Create new user
+    user = new User({
       username,
       email,
-      password
+      password,
+      name: name || username, // Use name if provided, otherwise use username
+      phone,
+      socialHandles
     });
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    admin.password = await bcrypt.hash(password, salt);
-
-    // Save admin to database
-    await admin.save();
+    // Save user to database
+    await user.save();
 
     // Create and return JWT token
     const payload = {
-      admin: {
-        id: admin.id
+      user: {
+        id: user.id
       }
     };
 
     jwt.sign(
       payload,
       config.jwtSecret,
-      { expiresIn: '1d' },
+      { expiresIn: '7d' }, // Longer expiry for better user experience
       (err, token) => {
         if (err) throw err;
-        res.status(201).json({ token });
+        res.status(201).json({ 
+          token,
+          user: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            email: user.email
+          }
+        });
       }
     );
   } catch (error) {
@@ -63,41 +69,49 @@ exports.register = async (req, res) => {
 };
 
 /**
- * Login an admin
+ * Login a user
  * @param {Object} req - Request object
  * @param {Object} res - Response object
- * @returns {Object} Response with admin token
+ * @returns {Object} Response with user token
  */
 exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // Check if admin exists
-    const admin = await Admin.findOne({ username });
-    if (!admin) {
+    // Check if user exists
+    const user = await User.findOne({ username });
+    if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
     // Check if password is correct
-    const isMatch = await bcrypt.compare(password, admin.password);
+    const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
     // Create and return JWT token
     const payload = {
-      admin: {
-        id: admin.id
+      user: {
+        id: user.id
       }
     };
 
     jwt.sign(
       payload,
       config.jwtSecret,
-      { expiresIn: '1d' },
+      { expiresIn: '7d' },
       (err, token) => {
         if (err) throw err;
-        res.json({ token });
+        res.json({ 
+          token,
+          user: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            email: user.email
+          }
+        });
       }
     );
   } catch (error) {
@@ -107,18 +121,82 @@ exports.login = async (req, res) => {
 };
 
 /**
- * Get current admin information
+ * Get current user information
  * @param {Object} req - Request object
  * @param {Object} res - Response object
- * @returns {Object} Response with admin data
+ * @returns {Object} Response with user data
  */
-exports.getCurrentAdmin = async (req, res) => {
+exports.getCurrentUser = async (req, res) => {
   try {
-    // Get admin from database (exclude password)
-    const admin = await Admin.findById(req.admin.id).select('-password');
-    res.json(admin);
+    // Get user from database (exclude password)
+    const user = await User.findById(req.user.id).select('-password');
+    res.json(user);
   } catch (error) {
-    console.error('Error in getCurrentAdmin:', error);
+    console.error('Error in getCurrentUser:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+/**
+ * Update user profile
+ * @param {Object} req - Request object
+ * @param {Object} res - Response object
+ * @returns {Object} Response with updated user data
+ */
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, email, phone, socialHandles } = req.body;
+    
+    // Find and update user
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        name,
+        email,
+        phone,
+        socialHandles,
+        updatedAt: Date.now()
+      },
+      { new: true, runValidators: true }
+    ).select('-password');
+    
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+/**
+ * Change password
+ * @param {Object} req - Request object
+ * @param {Object} res - Response object
+ * @returns {Object} Response with success message
+ */
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    // Get user with password
+    const user = await User.findById(req.user.id);
+    
+    // Check current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+    
+    // Update password
+    user.password = newPassword;
+    await user.save();
+    
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Error changing password:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

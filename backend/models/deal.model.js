@@ -1,10 +1,11 @@
+// models/deal.model.js
 const mongoose = require('mongoose');
 
 // Deal Schema
 const dealSchema = new mongoose.Schema({
-  creator: {
+  user: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Creator',
+    ref: 'User',
     required: true
   },
   clientName: {
@@ -50,6 +51,13 @@ const dealSchema = new mongoose.Schema({
   paymentDueDate: {
     type: Date
   },
+  notes: {
+    type: String
+  },
+  tags: {
+    type: [String],
+    default: []
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -58,6 +66,18 @@ const dealSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+});
+
+// Pre-save middleware to update the updatedAt field
+dealSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Pre-update middleware
+dealSchema.pre('findOneAndUpdate', function(next) {
+  this.set({ updatedAt: Date.now() });
+  next();
 });
 
 module.exports = mongoose.model('Deal', dealSchema);

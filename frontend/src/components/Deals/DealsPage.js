@@ -97,19 +97,16 @@ const PaymentChip = ({ status }) => {
 
 const DealsPage = () => {
   const [deals, setDeals] = useState([]);
-  const [creators, setCreators] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalDeals, setTotalDeals] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [creatorFilter, setCreatorFilter] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [formData, setFormData] = useState({
-    creator: '',
     clientName: '',
     status: 'Pending',
     contractAmount: '',
@@ -129,23 +126,8 @@ const DealsPage = () => {
   });
 
   useEffect(() => {
-    fetchCreators();
     fetchDeals();
-  }, [page, rowsPerPage, statusFilter, creatorFilter, searchTerm]);
-
-  const fetchCreators = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/creators`);
-      setCreators(response.data);
-    } catch (error) {
-      console.error('Error fetching creators:', error);
-      setSnackbar({
-        open: true,
-        message: 'Failed to fetch creators',
-        severity: 'error'
-      });
-    }
-  };
+  }, [page, rowsPerPage, statusFilter, searchTerm]);
 
   const fetchDeals = async () => {
     try {
@@ -161,10 +143,6 @@ const DealsPage = () => {
       
       if (statusFilter) {
         params.status = statusFilter;
-      }
-      
-      if (creatorFilter) {
-        params.creator = creatorFilter;
       }
       
       if (searchTerm) {
@@ -206,16 +184,10 @@ const DealsPage = () => {
     setPage(0);
   };
 
-  const handleCreatorFilterChange = (event) => {
-    setCreatorFilter(event.target.value);
-    setPage(0);
-  };
-
   const handleOpenDialog = (deal = null) => {
     if (deal) {
       setSelectedDeal(deal);
       setFormData({
-        creator: deal.creator._id,
         clientName: deal.clientName,
         status: deal.status,
         contractAmount: deal.contractAmount.toString(),
@@ -230,7 +202,6 @@ const DealsPage = () => {
     } else {
       setSelectedDeal(null);
       setFormData({
-        creator: '',
         clientName: '',
         status: 'Pending',
         contractAmount: '',
@@ -293,10 +264,6 @@ const DealsPage = () => {
 
   const validateForm = () => {
     const errors = {};
-    
-    if (!formData.creator) {
-      errors.creator = 'Creator is required';
-    }
     
     if (!formData.clientName.trim()) {
       errors.clientName = 'Client name is required';
@@ -451,7 +418,7 @@ const DealsPage = () => {
             />
           </Grid>
           
-          <Grid item xs={12} sm={3}>
+          <Grid item xs={12} sm={4}>
             <FormControl fullWidth size="small">
               <InputLabel id="status-filter-label">Status</InputLabel>
               <Select
@@ -470,33 +437,12 @@ const DealsPage = () => {
             </FormControl>
           </Grid>
           
-          <Grid item xs={12} sm={4}>
-            <FormControl fullWidth size="small">
-              <InputLabel id="creator-filter-label">Creator</InputLabel>
-              <Select
-                labelId="creator-filter-label"
-                id="creator-filter"
-                value={creatorFilter}
-                label="Creator"
-                onChange={handleCreatorFilterChange}
-              >
-                <MenuItem value="">All Creators</MenuItem>
-                {creators.map(creator => (
-                  <MenuItem key={creator._id} value={creator._id}>
-                    {creator.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-          
-          <Grid item xs={12} sm={1} sx={{ display: 'flex', justifyContent: 'center' }}>
+          <Grid item xs={12} sm={4} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
             <IconButton
               color="primary"
               onClick={() => {
                 setSearchTerm('');
                 setStatusFilter('');
-                setCreatorFilter('');
               }}
               title="Clear Filters"
             >
@@ -513,7 +459,6 @@ const DealsPage = () => {
             <TableHead>
               <TableRow>
                 <TableCell>Client</TableCell>
-                <TableCell>Creator</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Amount</TableCell>
                 <TableCell>Videos</TableCell>
@@ -525,13 +470,13 @@ const DealsPage = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
                     <CircularProgress size={30} />
                   </TableCell>
                 </TableRow>
               ) : deals.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
                     <Typography variant="body1" color="textSecondary">
                       No deals found
                     </Typography>
@@ -541,7 +486,6 @@ const DealsPage = () => {
                 deals.map((deal) => (
                   <TableRow key={deal._id}>
                     <TableCell>{deal.clientName}</TableCell>
-                    <TableCell>{deal.creator.name}</TableCell>
                     <TableCell>
                       <StatusChip status={deal.status} />
                     </TableCell>
@@ -613,30 +557,7 @@ const DealsPage = () => {
           <DialogContent>
             <Box component="form" sx={{ mt: 1 }}>
               <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth margin="normal" error={!!formErrors.creator}>
-                    <InputLabel id="creator-label">Creator *</InputLabel>
-                    <Select
-                      labelId="creator-label"
-                      id="creator"
-                      name="creator"
-                      value={formData.creator}
-                      onChange={handleInputChange}
-                      label="Creator *"
-                    >
-                      {creators.map(creator => (
-                        <MenuItem key={creator._id} value={creator._id}>
-                          {creator.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {formErrors.creator && (
-                      <FormHelperText>{formErrors.creator}</FormHelperText>
-                    )}
-                  </FormControl>
-                </Grid>
-                
-                <Grid item xs={12} sm={6}>
+                <Grid item xs={12}>
                   <TextField
                     fullWidth
                     margin="normal"
@@ -812,7 +733,7 @@ const DealsPage = () => {
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete the deal for "{selectedDeal?.clientName}" with creator "{selectedDeal?.creator?.name}"? This action cannot be undone.
+            Are you sure you want to delete the deal for "{selectedDeal?.clientName}"? This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>

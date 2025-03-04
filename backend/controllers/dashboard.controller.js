@@ -1,157 +1,239 @@
 // controllers/dashboard.controller.js
 const Deal = require('../models/deal.model');
-const Creator = require('../models/creator.model');
+const User = require('../models/user.model');
 const mongoose = require('mongoose');
 
-exports.getAgencyMetrics = async (req, res) => {
+/**
+ * Get user dashboard metrics
+ * @param {Object} req - Request object
+ * @param {Object} res - Response object
+ */
+exports.getMetrics = async (req, res) => {
   try {
-    // Get total earnings (sum of all contract amounts)
-    const earningsResult = await Deal.aggregate([
-      {
-        $group: {
-          _id: null,
-          totalEarnings: { $sum: '$contractAmount' },
-          totalVideosRequired: { $sum: '$videosRequired' },
-          totalVideosDelivered: { $sum: '$videosDelivered' }
-        }
+    const userId = req.user.id;
+    
+    // Get all user deals
+    const deals = await Deal.find({ user: userId });
+    
+    // Calculate metrics
+    const contractedEarnings = deals.reduce((sum, deal) => sum + deal.contractAmount, 0);
+    const paidEarnings = deals.reduce((sum, deal) => {
+      if (deal.paymentStatus === 'Paid') {
+        return sum + deal.contractAmount;
+      } else if (deal.paymentStatus === 'Partial') {
+        return sum + deal.amountPaid;
       }
-    ]);
-
-    // Get counts of deals by status
-    const dealStatusCounts = await Deal.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    // Format deal status counts
+      return sum;
+    }, 0);
+    
+    const pendingPayments = contractedEarnings - paidEarnings;
+    
+    const totalVideosDelivered = deals.reduce((sum, deal) => sum + deal.videosDelivered, 0);
+    const totalVideosRequired = deals.reduce((sum, deal) => sum + deal.videosRequired, 0);
+    
+    const averageRatePerVideo = totalVideosDelivered > 0 
+      ? contractedEarnings / totalVideosDelivered 
+      : (totalVideosRequired > 0 ? contractedEarnings / totalVideosRequired : 0);
+    
+    // Get unique brands/clients
+    const uniqueBrands = [...new Set(deals.map(deal => deal.clientName))];
+    
+    // Count deals by status
     const statusCounts = {
       Pending: 0,
       Active: 0,
       Completed: 0,
       Overdue: 0
     };
-
-    dealStatusCounts.forEach(status => {
-      statusCounts[status._id] = status.count;
-    });
-
-    // Get total number of active deals
-    const activeDeals = statusCounts.Active || 0;
-
-    // Calculate total metrics
-    const totalEarnings = earningsResult.length > 0 ? earningsResult[0].totalEarnings : 0;
-    const totalVideosRequired = earningsResult.length > 0 ? earningsResult[0].totalVideosRequired : 0;
-    const totalVideosDelivered = earningsResult.length > 0 ? earningsResult[0].totalVideosDelivered : 0;
     
-    // Calculate average money per video
-    const avgMoneyPerVideo = totalVideosDelivered > 0 
-      ? totalEarnings / totalVideosDelivered 
-      : (totalVideosRequired > 0 ? totalEarnings / totalVideosRequired : 0);
-
-    // Return all metrics
-    res.status(200).json({
-      totalEarnings,
-      activeDeals,
+    deals.forEach(deal => {
+      statusCounts[deal.status] = (statusCounts[deal.status] || 0) + 1;
+    });
+    
+    // Return dashboard metrics
+    res.json({
+      contractedEarnings,
+      paidEarnings,
+      pendingPayments,
+      averageRatePerVideo,
       totalVideos: totalVideosDelivered,
-      averageMoneyPerVideo: avgMoneyPerVideo.toFixed(2),
-      dealStatusCounts: statusCounts
+      totalBrands: uniqueBrands.length,
+      totalDeals: deals.length,
+      dealStatusCounts: statusCounts,
+      activeDeals: statusCounts.Active || 0
     });
   } catch (error) {
-    console.error('Error fetching agency metrics:', error);
-    res.status(500).json({ message: 'Failed to fetch agency metrics', error: error.message });
+    console.error('Error fetching dashboard metrics:', error);
+    res.status(500).json({ message: 'Error fetching dashboard metrics' });
   }
 };
 
+/**
+ * Get monthly earnings data
+ * @param {Object} req - Request object
+ * @param {Object} res - Response object
+ */
 exports.getMonthlyEarnings = async (req, res) => {
   try {
+    const userId = req.user.id;
     const currentYear = new Date().getFullYear();
     const startDate = new Date(currentYear, 0, 1); // January 1st of current year
     
     // Get monthly earnings for the current year
-    const monthlyEarnings = await Deal.aggregate([
-      {
-        $match: {
-          startDate: { $gte: startDate },
-          status: { $in: ['Active', 'Completed'] }
-        }
-      },
-      {
-        $group: {
-          _id: { 
-            month: { $month: '$startDate' },
-            year: { $year: '$startDate' }
-          },
-          earnings: { $sum: '$contractAmount' }
-        }
-      },
-      {
-        $sort: { '_id.year': 1, '_id.month': 1 }
-      }
-    ]);
-
-    // Format the response
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-
-    const formattedEarnings = Array(12).fill(0);
-    monthlyEarnings.forEach(item => {
-      const monthIndex = item._id.month - 1;
-      formattedEarnings[monthIndex] = item.earnings;
+    const deals = await Deal.find({
+      user: userId,
+      startDate: { $gte: startDate }
     });
-
-    const chartData = months.map((month, index) => ({
-      month,
-      earnings: formattedEarnings[index]
+    
+    // Group deals by month
+    const monthlyData = Array(12).fill(0).map((_, i) => ({
+      month: new Date(currentYear, i, 1).toLocaleString('default', { month: 'short' }),
+      earnings: 0
     }));
-
-    res.status(200).json(chartData);
+    
+    deals.forEach(deal => {
+      const startMonth = new Date(deal.startDate).getMonth();
+      monthlyData[startMonth].earnings += deal.contractAmount;
+    });
+    
+    res.json(monthlyData);
   } catch (error) {
     console.error('Error fetching monthly earnings:', error);
-    res.status(500).json({ message: 'Failed to fetch monthly earnings', error: error.message });
+    res.status(500).json({ message: 'Error fetching monthly earnings' });
   }
 };
 
+/**
+ * Get deal status chart data
+ * @param {Object} req - Request object
+ * @param {Object} res - Response object
+ */
 exports.getDealStatusChart = async (req, res) => {
   try {
-    const dealStatusCounts = await Deal.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    // Format the response
-    const chartData = dealStatusCounts.map(status => ({
-      status: status._id,
-      count: status.count
+    const userId = req.user.id;
+    
+    // Get deals and count by status
+    const deals = await Deal.find({ user: userId });
+    
+    const statusCounts = {
+      Pending: 0,
+      Active: 0,
+      Completed: 0,
+      Overdue: 0
+    };
+    
+    deals.forEach(deal => {
+      statusCounts[deal.status] = (statusCounts[deal.status] || 0) + 1;
+    });
+    
+    // Format the response for the chart
+    const chartData = Object.keys(statusCounts).map(status => ({
+      status,
+      count: statusCounts[status]
     }));
-
-    res.status(200).json(chartData);
+    
+    res.json(chartData);
   } catch (error) {
     console.error('Error fetching deal status chart data:', error);
-    res.status(500).json({ message: 'Failed to fetch deal status data', error: error.message });
+    res.status(500).json({ message: 'Error fetching deal status data' });
   }
 };
 
-exports.getRecentDeals = async (req, res) => {
+/**
+ * Get year-over-year comparison data
+ * @param {Object} req - Request object
+ * @param {Object} res - Response object
+ */
+exports.getYearlyComparison = async (req, res) => {
   try {
-    const recentDeals = await Deal.find()
-      .sort({ updatedAt: -1 })
-      .limit(5)
-      .populate('creator', 'name')
-      .lean();
-
-    res.status(200).json(recentDeals);
+    const userId = req.user.id;
+    const currentYear = new Date().getFullYear();
+    const previousYear = currentYear - 1;
+    
+    const startOfCurrentYear = new Date(currentYear, 0, 1);
+    const startOfPreviousYear = new Date(previousYear, 0, 1);
+    
+    // Get deals for current and previous year
+    const deals = await Deal.find({
+      user: userId,
+      startDate: { $gte: startOfPreviousYear }
+    });
+    
+    // Calculate earnings by year and month
+    const yearlyData = {
+      currentYear: Array(12).fill(0).map((_, i) => ({
+        month: new Date(currentYear, i, 1).toLocaleString('default', { month: 'short' }),
+        earnings: 0
+      })),
+      previousYear: Array(12).fill(0).map((_, i) => ({
+        month: new Date(previousYear, i, 1).toLocaleString('default', { month: 'short' }),
+        earnings: 0
+      }))
+    };
+    
+    deals.forEach(deal => {
+      const dealYear = new Date(deal.startDate).getFullYear();
+      const dealMonth = new Date(deal.startDate).getMonth();
+      
+      if (dealYear === currentYear) {
+        yearlyData.currentYear[dealMonth].earnings += deal.contractAmount;
+      } else if (dealYear === previousYear) {
+        yearlyData.previousYear[dealMonth].earnings += deal.contractAmount;
+      }
+    });
+    
+    res.json(yearlyData);
   } catch (error) {
-    console.error('Error fetching recent deals:', error);
-    res.status(500).json({ message: 'Failed to fetch recent deals', error: error.message });
+    console.error('Error fetching yearly comparison data:', error);
+    res.status(500).json({ message: 'Error fetching yearly comparison data' });
+  }
+};
+
+/**
+ * Get upcoming deadlines
+ * @param {Object} req - Request object
+ * @param {Object} res - Response object
+ */
+exports.getUpcomingDeadlines = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const today = new Date();
+    const thirtyDaysFromNow = new Date(today);
+    thirtyDaysFromNow.setDate(today.getDate() + 30);
+    
+    // Get deals with upcoming end dates or payment due dates
+    const deals = await Deal.find({
+      user: userId,
+      $or: [
+        { endDate: { $gte: today, $lte: thirtyDaysFromNow } },
+        { paymentDueDate: { $gte: today, $lte: thirtyDaysFromNow } }
+      ],
+      status: { $in: ['Pending', 'Active'] }
+    }).sort({ endDate: 1 });
+    
+    const deadlines = deals.map(deal => {
+      const daysUntilEnd = Math.ceil((new Date(deal.endDate) - today) / (1000 * 60 * 60 * 24));
+      const daysUntilPayment = deal.paymentDueDate 
+        ? Math.ceil((new Date(deal.paymentDueDate) - today) / (1000 * 60 * 60 * 24))
+        : null;
+      
+      return {
+        _id: deal._id,
+        clientName: deal.clientName,
+        contractAmount: deal.contractAmount,
+        endDate: deal.endDate,
+        paymentDueDate: deal.paymentDueDate,
+        daysUntilEnd: daysUntilEnd > 0 ? daysUntilEnd : 0,
+        daysUntilPayment: daysUntilPayment !== null ? (daysUntilPayment > 0 ? daysUntilPayment : 0) : null,
+        videosDelivered: deal.videosDelivered,
+        videosRequired: deal.videosRequired,
+        status: deal.status
+      };
+    });
+    
+    res.json(deadlines);
+  } catch (error) {
+    console.error('Error fetching upcoming deadlines:', error);
+    res.status(500).json({ message: 'Error fetching upcoming deadlines' });
   }
 };

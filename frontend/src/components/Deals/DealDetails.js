@@ -215,9 +215,10 @@ const DealDetails = () => {
         </Box>
         <Button
           variant="contained"
-          component={Link}
-          to={`/deals/${id}/edit`}
           startIcon={<EditIcon />}
+          onClick={() => {
+            // Handle edit (opens dialog or redirects)
+          }}
         >
           Edit Deal
         </Button>
@@ -229,9 +230,6 @@ const DealDetails = () => {
           <Grid item xs={12} md={8}>
             <Typography variant="h5" gutterBottom>
               {deal.clientName}
-            </Typography>
-            <Typography variant="subtitle1" color="text.secondary">
-              Creator: <Link to={`/creators/${deal.creator._id}`}>{deal.creator.name}</Link>
             </Typography>
           </Grid>
           <Grid item xs={12} md={4} sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', md: 'flex-end' } }}>

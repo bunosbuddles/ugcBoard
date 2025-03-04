@@ -1,6 +1,6 @@
 // backend/controllers/document.controller.js
 const Document = require('../models/document.model');
-const Creator = require('../models/creator.model');
+const User = require('../models/user.model'); // Changed from Creator to User
 const Deal = require('../models/deal.model');
 const fileService = require('../services/fileService');
 const pdfProcessor = require('../services/pdfProcessor');
@@ -28,18 +28,10 @@ exports.extractDocumentData = async (req, res) => {
     const fileBuffer = fs.readFileSync(req.file.path);
     const extractedData = await pdfProcessor.processPdfDocument(fileBuffer, type);
 
-    // If creator name is found, try to find matching creator
-    let creator = null;
-    if (extractedData.creatorName) {
-      creator = await Creator.findOne({
-        name: { $regex: new RegExp(extractedData.creatorName, 'i') }
-      });
-    }
-
-    // Return extracted data with creator info if found
+    // Return extracted data (we don't need to search for creators anymore since the user is the logged-in user)
     res.json({
       ...extractedData,
-      creatorId: creator ? creator._id : null
+      userId: req.user.id // Use the ID of the logged-in user
     });
   } catch (error) {
     console.error('Error extracting document data:', error);
@@ -82,29 +74,28 @@ exports.uploadDocument = async (req, res) => {
       type,
       fileUrl,
       fileName,
-      extractedData: parsedData
+      extractedData: parsedData,
+      userId: req.user.id // Always add the current user's ID
     };
 
     // If deal ID provided, associate with deal
     if (dealId) {
-      // Check if deal exists
-      const dealExists = await Deal.exists({ _id: dealId });
+      // Check if deal exists and belongs to this user
+      const dealExists = await Deal.exists({ 
+        _id: dealId,
+        user: req.user.id // Ensure deal belongs to the current user
+      });
+      
       if (!dealExists) {
         return res.status(404).json({ message: 'Deal not found' });
       }
       documentData.dealId = dealId;
     } else {
       // Create a new deal if needed
-      if (type === 'Contract' && parsedData.creatorId && parsedData.clientName) {
-        // Check if creator exists
-        const creatorExists = await Creator.exists({ _id: parsedData.creatorId });
-        if (!creatorExists) {
-          return res.status(404).json({ message: 'Creator not found' });
-        }
-
+      if (type === 'Contract' && parsedData.clientName) {
         // Create new deal
         const newDeal = new Deal({
-          creator: parsedData.creatorId,
+          user: req.user.id, // Use the current user's ID
           clientName: parsedData.clientName,
           contractAmount: parsedData.amount || 0,
           videosRequired: parsedData.videoCount || 0,
@@ -114,7 +105,6 @@ exports.uploadDocument = async (req, res) => {
 
         const savedDeal = await newDeal.save();
         documentData.dealId = savedDeal._id;
-        documentData.creatorId = parsedData.creatorId;
       }
     }
 
@@ -137,9 +127,9 @@ exports.uploadDocument = async (req, res) => {
  */
 exports.getAllDocuments = async (req, res) => {
   try {
-    const documents = await Document.find()
+    // Only fetch documents belonging to the current user
+    const documents = await Document.find({ userId: req.user.id })
       .populate('dealId', 'clientName status')
-      .populate('creatorId', 'name')
       .sort({ uploadDate: -1 });
     
     res.json(documents);
@@ -156,9 +146,11 @@ exports.getAllDocuments = async (req, res) => {
  */
 exports.getDocumentById = async (req, res) => {
   try {
-    const document = await Document.findById(req.params.id)
-      .populate('dealId')
-      .populate('creatorId', 'name');
+    // Only fetch if document belongs to the current user
+    const document = await Document.findOne({
+      _id: req.params.id,
+      userId: req.user.id
+    }).populate('dealId');
     
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
@@ -178,8 +170,20 @@ exports.getDocumentById = async (req, res) => {
  */
 exports.getDocumentsByDealId = async (req, res) => {
   try {
-    const documents = await Document.find({ dealId: req.params.dealId })
-      .sort({ uploadDate: -1 });
+    // Verify that the deal belongs to the user
+    const dealExists = await Deal.exists({
+      _id: req.params.dealId,
+      user: req.user.id
+    });
+    
+    if (!dealExists) {
+      return res.status(404).json({ message: 'Deal not found' });
+    }
+    
+    const documents = await Document.find({ 
+      dealId: req.params.dealId,
+      userId: req.user.id
+    }).sort({ uploadDate: -1 });
     
     res.json(documents);
   } catch (error) {
@@ -195,7 +199,11 @@ exports.getDocumentsByDealId = async (req, res) => {
  */
 exports.deleteDocument = async (req, res) => {
   try {
-    const document = await Document.findById(req.params.id);
+    // Only delete if document belongs to the current user
+    const document = await Document.findOne({
+      _id: req.params.id,
+      userId: req.user.id
+    });
     
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
@@ -208,7 +216,7 @@ exports.deleteDocument = async (req, res) => {
     await fileService.deleteFile(filename);
     
     // Delete document from database
-    await Document.findByIdAndDelete(req.params.id);
+    await Document.findByIdAndDelete(document._id);
     
     res.json({ message: 'Document deleted successfully' });
   } catch (error) {

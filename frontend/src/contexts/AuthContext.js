@@ -9,105 +9,160 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [admin, setAdmin] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
 
-  // Load admin on mount
+  // Check if token exists and get user data on initial load
   useEffect(() => {
-    const loadAdmin = async () => {
+    const checkAuth = async () => {
       setLoading(true);
-      try {
-        const token = localStorage.getItem('token');
-        
-        // If no token, not authenticated
-        if (!token) {
-          setIsAuthenticated(false);
-          setAdmin(null);
-          setLoading(false);
-          return;
-        }
-        
-        // Set axios default headers
+      const token = localStorage.getItem('token');
+
+      if (token) {
+        // Set token in axios headers
         axios.defaults.headers.common['x-auth-token'] = token;
         
-        // Get current admin
-        const res = await axios.get(`${API_URL}/api/auth/me`);
-        
-        setAdmin(res.data);
-        setIsAuthenticated(true);
-      } catch (err) {
-        console.error('Error loading admin:', err);
-        localStorage.removeItem('token');
-        setAdmin(null);
-        setIsAuthenticated(false);
-      } finally {
-        setLoading(false);
+        try {
+          // Get current user data
+          const res = await axios.get(`${API_URL}/api/auth/me`);
+          setCurrentUser(res.data);
+          setIsAuthenticated(true);
+        } catch (err) {
+          console.error('Auth error:', err);
+          localStorage.removeItem('token');
+          delete axios.defaults.headers.common['x-auth-token'];
+        }
       }
+      
+      setLoading(false);
     };
 
-    loadAdmin();
+    checkAuth();
   }, []);
 
-  // Login
+  // Login user
   const login = async (username, password) => {
-    setLoading(true);
-    setError(null);
-    
     try {
+      setError('');
+      
       const res = await axios.post(`${API_URL}/api/auth/login`, {
         username,
         password
       });
-      
-      const { token } = res.data;
-      
-      // Save token to local storage
-      localStorage.setItem('token', token);
-      
-      // Set axios default headers
-      axios.defaults.headers.common['x-auth-token'] = token;
-      
-      // Get admin data
-      const adminRes = await axios.get(`${API_URL}/api/auth/me`);
-      
-      setAdmin(adminRes.data);
+
+      // Save token and user data
+      localStorage.setItem('token', res.data.token);
+      axios.defaults.headers.common['x-auth-token'] = res.data.token;
+
+      // Get full user data
+      const userRes = await axios.get(`${API_URL}/api/auth/me`);
+      setCurrentUser(userRes.data);
       setIsAuthenticated(true);
+      
       return true;
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.response?.data?.message || 'An error occurred during login');
+      setError(
+        err.response && err.response.data.message
+          ? err.response.data.message
+          : 'An error occurred during login'
+      );
       return false;
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Logout
+  // Register user
+  const register = async (userData) => {
+    try {
+      setError('');
+      
+      const res = await axios.post(`${API_URL}/api/auth/register`, userData);
+
+      // Save token and user data
+      localStorage.setItem('token', res.data.token);
+      axios.defaults.headers.common['x-auth-token'] = res.data.token;
+      
+      // Get full user data
+      const userRes = await axios.get(`${API_URL}/api/auth/me`);
+      setCurrentUser(userRes.data);
+      setIsAuthenticated(true);
+      
+      return true;
+    } catch (err) {
+      console.error('Registration error:', err);
+      setError(
+        err.response && err.response.data.message
+          ? err.response.data.message
+          : 'An error occurred during registration'
+      );
+      return false;
+    }
+  };
+
+  // Update user profile
+  const updateProfile = async (profileData) => {
+    try {
+      setError('');
+      
+      const res = await axios.put(`${API_URL}/api/auth/profile`, profileData);
+      setCurrentUser(res.data);
+      
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Profile update error:', err);
+      setError(
+        err.response && err.response.data.message
+          ? err.response.data.message
+          : 'An error occurred updating your profile'
+      );
+      return { success: false, error: err.response?.data?.message || 'Update failed' };
+    }
+  };
+
+  // Change password
+  const changePassword = async (passwordData) => {
+    try {
+      setError('');
+      
+      await axios.put(`${API_URL}/api/auth/password`, passwordData);
+      
+      return { success: true };
+    } catch (err) {
+      console.error('Password change error:', err);
+      setError(
+        err.response && err.response.data.message
+          ? err.response.data.message
+          : 'An error occurred changing your password'
+      );
+      return { success: false, error: err.response?.data?.message || 'Password change failed' };
+    }
+  };
+
+  // Logout user
   const logout = () => {
-    // Remove token from local storage
     localStorage.removeItem('token');
-    
-    // Remove axios default headers
     delete axios.defaults.headers.common['x-auth-token'];
-    
-    // Reset state
-    setAdmin(null);
+    setCurrentUser(null);
     setIsAuthenticated(false);
   };
 
-  // Clear error
+  // Clear error message
   const clearError = () => {
-    setError(null);
+    setError('');
   };
 
+  // Value to be provided by context
   const value = {
-    admin,
+    currentUser,
     isAuthenticated,
     loading,
     error,
     login,
+    register,
+    updateProfile,
+    changePassword,
     logout,
     clearError
   };

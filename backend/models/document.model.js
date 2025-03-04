@@ -1,3 +1,4 @@
+// models/document.model.js
 const mongoose = require('mongoose');
 
 // Document Schema (for Invoices and Contracts)
@@ -7,9 +8,10 @@ const documentSchema = new mongoose.Schema({
     ref: 'Deal',
     required: true
   },
-  creatorId: {
+  userId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Creator'
+    ref: 'User',
+    required: true
   },
   type: {
     type: String,
@@ -25,7 +27,6 @@ const documentSchema = new mongoose.Schema({
     required: true
   },
   extractedData: {
-    creatorName: String,
     clientName: String,
     amount: Number,
     dueDate: Date,
@@ -36,6 +37,13 @@ const documentSchema = new mongoose.Schema({
   uploadDate: {
     type: Date,
     default: Date.now
+  },
+  tags: {
+    type: [String],
+    default: []
+  },
+  notes: {
+    type: String
   }
 });
 

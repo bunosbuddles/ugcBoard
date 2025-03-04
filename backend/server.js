@@ -8,7 +8,7 @@ const config = require('./config/backend-config-file.js');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
-const creatorRoutes = require('./routes/creator.routes');
+// Remove this line: const creatorRoutes = require('./routes/creator.routes');
 const dealRoutes = require('./routes/deal.routes');
 const documentRoutes = require('./routes/document.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -43,7 +43,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API routes
 app.use('/api/auth', authRoutes);
-app.use('/api/creators', creatorRoutes);
+// Remove this line: app.use('/api/creators', creatorRoutes);
 app.use('/api/deals', dealRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
