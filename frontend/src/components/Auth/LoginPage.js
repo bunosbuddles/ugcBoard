@@ -1,6 +1,6 @@
 // src/components/Auth/LoginPage.js
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -166,6 +166,17 @@ const LoginPage = () => {
               sx={{ mt: 3, mb: 2 }}
             >
               {loading ? 'Signing in...' : 'Sign In'}
+            </Button>
+            
+            {/* Sign Up Button */}
+            <Button
+              component={Link}
+              to="/register"
+              fullWidth
+              variant="outlined"
+              sx={{ mt: 1 }}
+            >
+              Don't have an account? Sign Up
             </Button>
           </form>
         </CardContent>
