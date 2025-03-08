@@ -21,7 +21,8 @@ import {
   FormControl,
   InputLabel,
   Select,
-  IconButton
+  IconButton,
+  Alert
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
@@ -41,14 +42,22 @@ const DocumentsPage = () => {
   const [totalDocuments, setTotalDocuments] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [error, setError] = useState('');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  
+  // Function to force refresh the documents list
+  const refreshDocuments = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   useEffect(() => {
     fetchDocuments();
-  }, [page, rowsPerPage, typeFilter, searchTerm]);
+  }, [page, rowsPerPage, typeFilter, searchTerm, refreshTrigger]);
 
   const fetchDocuments = async () => {
     try {
       setLoading(true);
+      setError('');
       
       // Build query parameters
       const params = {
@@ -66,12 +75,30 @@ const DocumentsPage = () => {
       
       const response = await axios.get(`${API_URL}/api/documents`, { params });
       
-      setDocuments(response.data.documents || []);
-      setTotalDocuments(response.data.pagination?.total || response.data.documents?.length || 0);
+      // Check if the response has the expected structure
+      if (response.data && (response.data.documents || Array.isArray(response.data))) {
+        // Handle both pagination and non-pagination response formats
+        const documentsData = response.data.documents || response.data;
+        setDocuments(documentsData);
+        setTotalDocuments(
+          response.data.pagination?.total || 
+          response.data.documents?.length || 
+          response.data.length || 
+          0
+        );
+      } else {
+        // Handle unexpected response format
+        console.error('Unexpected response format:', response.data);
+        setDocuments([]);
+        setTotalDocuments(0);
+        setError('Unexpected server response format');
+      }
+      
       setLoading(false);
     } catch (error) {
       console.error('Error fetching documents:', error);
       setLoading(false);
+      setError('Failed to load documents. Please try refreshing the page.');
     }
   };
 
@@ -100,7 +127,11 @@ const DocumentsPage = () => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '-';
+    
     return new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
       month: 'short',
@@ -125,15 +156,39 @@ const DocumentsPage = () => {
         <Typography variant="h4">
           Documents
         </Typography>
-        <Button
-          variant="contained"
-          component={Link}
-          to="/documents/upload"
-          startIcon={<UploadFileIcon />}
-        >
-          Upload Document
-        </Button>
+        <Box>
+          <Button
+            variant="contained"
+            onClick={refreshDocuments}
+            sx={{ mr: 2 }}
+          >
+            Refresh
+          </Button>
+          <Button
+            variant="contained"
+            component={Link}
+            to="/documents/upload"
+            startIcon={<UploadFileIcon />}
+          >
+            Upload Document
+          </Button>
+        </Box>
       </Box>
+      
+      {/* Error display */}
+      {error && (
+        <Alert 
+          severity="error" 
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={refreshDocuments}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
+      )}
       
       {/* Filters */}
       <Paper sx={{ p: 2, mb: 3 }}>
@@ -229,12 +284,16 @@ const DocumentsPage = () => {
                         </Typography>
                       </Box>
                     </TableCell>
-                    <TableCell>{doc.fileName}</TableCell>
-                    <TableCell>{doc.extractedData?.clientName || '-'}</TableCell>
+                    <TableCell>{doc.fileName || 'Unknown File'}</TableCell>
+                    <TableCell>
+                      {doc.extractedData?.clientName || 
+                       (doc.dealId && typeof doc.dealId === 'object' && doc.dealId.clientName) || 
+                       '-'}
+                    </TableCell>
                     <TableCell>{formatDate(doc.uploadDate)}</TableCell>
                     <TableCell>
                       {doc.dealId ? (
-                        <Link to={`/deals/${doc.dealId}`}>
+                        <Link to={`/deals/${typeof doc.dealId === 'object' ? doc.dealId._id : doc.dealId}`}>
                           View Deal
                         </Link>
                       ) : (

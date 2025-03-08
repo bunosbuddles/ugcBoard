@@ -1,5 +1,6 @@
 // src/components/Documents/DocumentUpload.js
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -45,6 +46,7 @@ const UploadPaper = styled(Paper)(({ theme }) => ({
 const steps = ['Upload Document', 'Review Extracted Data', 'Submit'];
 
 const DocumentUpload = () => {
+  const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [file, setFile] = useState(null);
@@ -59,6 +61,7 @@ const DocumentUpload = () => {
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [uploadAttempts, setUploadAttempts] = useState(0);
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
@@ -122,13 +125,35 @@ const DocumentUpload = () => {
         }
       });
       
-      setExtractedData(response.data);
+      // Initialize defaults for any missing data
+      const dataWithDefaults = {
+        clientName: '',
+        amount: '',
+        dueDate: null,
+        videoCount: '',
+        startDate: null,
+        endDate: null,
+        ...response.data
+      };
+      
+      setExtractedData(dataWithDefaults);
       setLoading(false);
       setActiveStep(1);
     } catch (error) {
       setLoading(false);
-      setError('Failed to extract data from the document. Please try again or proceed to manual entry.');
       console.error('Error extracting data:', error);
+      setError('Failed to extract data from the document. Please proceed to manual entry.');
+      
+      // Move to the next step anyway, with empty data that user can fill in
+      setExtractedData({
+        clientName: '',
+        amount: '',
+        dueDate: null,
+        videoCount: '',
+        startDate: null,
+        endDate: null
+      });
+      setActiveStep(1);
     }
   };
 
@@ -151,11 +176,29 @@ const DocumentUpload = () => {
     try {
       setLoading(true);
       setError('');
+      setUploadAttempts(prev => prev + 1);
+      
+      // Validate that client name is provided
+      if (!extractedData.clientName) {
+        setError('Client name is required.');
+        setLoading(false);
+        return;
+      }
       
       const formData = new FormData();
       formData.append('document', file);
       formData.append('type', documentType);
-      formData.append('data', JSON.stringify(extractedData));
+      
+      // Ensure data is properly formatted before sending
+      const dataToSend = {
+        ...extractedData,
+        // Convert possible null values to empty strings
+        clientName: extractedData.clientName || '',
+        amount: extractedData.amount || 0,
+        videoCount: extractedData.videoCount || 0
+      };
+      
+      formData.append('data', JSON.stringify(dataToSend));
       
       const response = await axios.post(`${API_URL}/api/documents/upload`, formData, {
         headers: {
@@ -168,8 +211,14 @@ const DocumentUpload = () => {
       setActiveStep(2);
     } catch (error) {
       setLoading(false);
-      setError('Failed to upload the document. Please try again.');
       console.error('Error uploading document:', error);
+      
+      // Provide more specific error messages based on the error response
+      if (error.response && error.response.data) {
+        setError(`Failed to upload: ${error.response.data.message || 'Unknown server error'}`);
+      } else {
+        setError('Failed to upload the document. Please try again.');
+      }
     }
   };
 
@@ -199,6 +248,10 @@ const DocumentUpload = () => {
     });
     setSuccess(false);
     setError('');
+  };
+  
+  const goToDocuments = () => {
+    navigate('/documents');
   };
 
   return (
@@ -305,6 +358,9 @@ const DocumentUpload = () => {
                   name="clientName"
                   value={extractedData.clientName || ''}
                   onChange={handleInputChange}
+                  required
+                  error={!extractedData.clientName}
+                  helperText={!extractedData.clientName ? "Client name is required" : ""}
                 />
               </Grid>
               
@@ -379,14 +435,22 @@ const DocumentUpload = () => {
               <Typography variant="body1" paragraph>
                 The document has been processed and the information has been added to the system.
               </Typography>
-              <Button 
-                variant="contained" 
-                color="primary" 
-                onClick={handleReset}
-                sx={{ mt: 2 }}
-              >
-                Upload Another Document
-              </Button>
+              <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center', gap: 2 }}>
+                <Button 
+                  variant="contained" 
+                  color="primary" 
+                  onClick={handleReset}
+                >
+                  Upload Another Document
+                </Button>
+                <Button 
+                  variant="outlined" 
+                  color="primary" 
+                  onClick={goToDocuments}
+                >
+                  View All Documents
+                </Button>
+              </Box>
             </Box>
           )}
           

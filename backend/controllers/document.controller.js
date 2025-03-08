@@ -1,6 +1,6 @@
 // backend/controllers/document.controller.js
 const Document = require('../models/document.model');
-const User = require('../models/user.model'); // Changed from Creator to User
+const User = require('../models/user.model');
 const Deal = require('../models/deal.model');
 const fileService = require('../services/fileService');
 const pdfProcessor = require('../services/pdfProcessor');
@@ -28,10 +28,10 @@ exports.extractDocumentData = async (req, res) => {
     const fileBuffer = fs.readFileSync(req.file.path);
     const extractedData = await pdfProcessor.processPdfDocument(fileBuffer, type);
 
-    // Return extracted data (we don't need to search for creators anymore since the user is the logged-in user)
+    // Return extracted data
     res.json({
       ...extractedData,
-      userId: req.user.id // Use the ID of the logged-in user
+      userId: req.user.id
     });
   } catch (error) {
     console.error('Error extracting document data:', error);
@@ -75,36 +75,89 @@ exports.uploadDocument = async (req, res) => {
       fileUrl,
       fileName,
       extractedData: parsedData,
-      userId: req.user.id // Always add the current user's ID
+      userId: req.user.id
     };
 
-    // If deal ID provided, associate with deal
-    if (dealId) {
-      // Check if deal exists and belongs to this user
-      const dealExists = await Deal.exists({ 
-        _id: dealId,
-        user: req.user.id // Ensure deal belongs to the current user
-      });
-      
-      if (!dealExists) {
-        return res.status(404).json({ message: 'Deal not found' });
-      }
-      documentData.dealId = dealId;
-    } else {
-      // Create a new deal if needed
-      if (type === 'Contract' && parsedData.clientName) {
+    // Find or create a deal
+    let dealIdToUse = dealId;
+
+    // If no dealId provided, create a new deal
+    if (!dealIdToUse && type === 'Contract' && parsedData.clientName) {
+      try {
         // Create new deal
         const newDeal = new Deal({
-          user: req.user.id, // Use the current user's ID
+          user: req.user.id,
           clientName: parsedData.clientName,
           contractAmount: parsedData.amount || 0,
-          videosRequired: parsedData.videoCount || 0,
+          videosRequired: parsedData.videoCount || 1, // Default to 1 if not provided
           startDate: parsedData.startDate || new Date(),
-          endDate: parsedData.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // Default 30 days
+          endDate: parsedData.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Default 30 days
+          status: 'Pending' // Use a valid status from your enum
         });
 
         const savedDeal = await newDeal.save();
+        dealIdToUse = savedDeal._id;
+      } catch (dealError) {
+        console.error('Error creating new deal:', dealError);
+        // Continue with document upload even if deal creation fails
+      }
+    }
+
+    // If dealId exists and was provided or created, verify it belongs to this user
+    if (dealIdToUse) {
+      const dealExists = await Deal.exists({ 
+        _id: dealIdToUse,
+        user: req.user.id
+      });
+      
+      if (dealExists) {
+        documentData.dealId = dealIdToUse;
+      } else {
+        // If we can't find the deal, create a default one that matches the schema requirements
+        try {
+          const today = new Date();
+          const thirtyDaysLater = new Date(today);
+          thirtyDaysLater.setDate(today.getDate() + 30);
+          
+          const defaultDeal = new Deal({
+            user: req.user.id,
+            clientName: parsedData.clientName || 'Unknown Client',
+            contractAmount: parsedData.amount || 0,
+            videosRequired: parsedData.videoCount || 1, // Default to 1
+            startDate: today,
+            endDate: thirtyDaysLater,
+            status: 'Pending' // Use a valid status from your enum
+          });
+          
+          const savedDeal = await defaultDeal.save();
+          documentData.dealId = savedDeal._id;
+        } catch (error) {
+          console.error('Error creating default deal:', error);
+          return res.status(500).json({ message: 'Error creating associated deal' });
+        }
+      }
+    } else {
+      // If no deal ID and not a contract, create a placeholder deal
+      try {
+        const today = new Date();
+        const thirtyDaysLater = new Date(today);
+        thirtyDaysLater.setDate(today.getDate() + 30);
+        
+        const placeholderDeal = new Deal({
+          user: req.user.id,
+          clientName: parsedData.clientName || 'Unknown Client',
+          contractAmount: parsedData.amount || 0,
+          videosRequired: parsedData.videoCount || 1, // Default to 1
+          startDate: today,
+          endDate: thirtyDaysLater,
+          status: 'Pending' // Use a valid status from your enum
+        });
+        
+        const savedDeal = await placeholderDeal.save();
         documentData.dealId = savedDeal._id;
+      } catch (error) {
+        console.error('Error creating placeholder deal:', error);
+        return res.status(500).json({ message: 'Error creating associated deal' });
       }
     }
 
@@ -127,23 +180,54 @@ exports.uploadDocument = async (req, res) => {
  */
 exports.getAllDocuments = async (req, res) => {
   try {
-    // Only fetch documents belonging to the current user
-    const documents = await Document.find({ userId: req.user.id })
-      .populate('dealId', 'clientName status')
-      .sort({ uploadDate: -1 });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const typeFilter = req.query.type;
+    const searchTerm = req.query.search;
     
-    res.json(documents);
+    // Build query
+    const query = { userId: req.user.id };
+    
+    // Add type filter if provided
+    if (typeFilter) {
+      query.type = typeFilter;
+    }
+    
+    // Add search term if provided
+    if (searchTerm) {
+      query.$or = [
+        { fileName: { $regex: searchTerm, $options: 'i' } },
+        { 'extractedData.clientName': { $regex: searchTerm, $options: 'i' } }
+      ];
+    }
+    
+    // Count total documents matching query
+    const total = await Document.countDocuments(query);
+    
+    // Fetch documents with pagination
+    const documents = await Document.find(query)
+      .populate('dealId', 'clientName status')
+      .sort({ uploadDate: -1 })
+      .skip(skip)
+      .limit(limit);
+    
+    // Return with pagination info
+    res.json({
+      documents,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     console.error('Error fetching documents:', error);
     res.status(500).json({ message: 'Error fetching documents' });
   }
 };
 
-/**
- * Get document by ID
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
+// Rest of the controller methods (getDocumentById, getDocumentsByDealId, deleteDocument) remain unchanged
 exports.getDocumentById = async (req, res) => {
   try {
     // Only fetch if document belongs to the current user
@@ -163,11 +247,6 @@ exports.getDocumentById = async (req, res) => {
   }
 };
 
-/**
- * Get documents by deal ID
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
 exports.getDocumentsByDealId = async (req, res) => {
   try {
     // Verify that the deal belongs to the user
@@ -192,11 +271,6 @@ exports.getDocumentsByDealId = async (req, res) => {
   }
 };
 
-/**
- * Delete document
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
 exports.deleteDocument = async (req, res) => {
   try {
     // Only delete if document belongs to the current user
